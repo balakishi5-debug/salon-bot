@@ -1,22 +1,18 @@
 import os
 import json
+import time
 import requests
 from flask import Flask, request, jsonify
-from anthropic import Anthropic
+from groq import Groq
 
 app = Flask(__name__)
-client = Anthropic()
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-# ──────────────────────────────────────────
-# BURAYA ÖZ MƏLUMATLARINI YAZ
-# ──────────────────────────────────────────
-WHATSAPP_TOKEN   = os.environ.get("WHATSAPP_TOKEN")   # Meta-dan
-PHONE_NUMBER_ID  = os.environ.get("PHONE_NUMBER_ID")  # Meta-dan
-VERIFY_TOKEN     = os.environ.get("VERIFY_TOKEN", "salon123")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY") # Anthropic-dən
+WHATSAPP_TOKEN  = os.environ.get("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+VERIFY_TOKEN    = os.environ.get("VERIFY_TOKEN", "salon123")
 
-SALON_INFO = """
-Sən Glamour Studio gözəllik salonunun WhatsApp köməkçisisən.
+SALON_INFO = """Sən Glamour Studio gözəllik salonunun WhatsApp köməkçisisən.
 
 SALON MƏLUMATLARI:
 - Ünvan: Neftçilər pr. 45, Bakı
@@ -36,25 +32,18 @@ MASTERLƏRIMIZ:
 - Günay xanım (manikür, qaş)
 - Leyla xanım (üz baxımı, makiyaj)
 
-RANDEVU QAYDALARI:
-- Mövcud saatlar: 09:00, 11:00, 13:00, 15:00, 17:00
-- Randevu üçün: xidmət + master + saat lazımdır
-- Randevu təsdiqlənəndə müştəriyə xülasə göndər
+RANDEVU SAATLARI: 09:00, 11:00, 13:00, 15:00, 17:00
 
 DAVRANIŞIN:
 - Azərbaycan dilində mehriban danış
 - Qısa və aydın cavab ver
-- Randevu məlumatları tamamlandıqda belə yaz:
-  ✅ RANDEVU_TƏSDİQ: [xidmət] | [master] | [saat] | [müştəri adı]
-- Hər hansı sual gəldikdə salon haqqında məlumat ver
-"""
+- Randevu üçün: xidmət + master + saat lazımdır
+- Randevu tamamlandıqda mütləq bu formatda yaz:
+  ✅ RANDEVU_TƏSDİQ: [xidmət] | [master] | [saat]"""
 
-# Hər müştərinin söhbət tarixi (nömrə → mesaj siyahısı)
 conversations = {}
 
-# ──────────────────────────────────────────
-# WHATSAPP MESAJ GÖNDƏR
-# ──────────────────────────────────────────
+
 def send_whatsapp(to, text):
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
@@ -71,10 +60,6 @@ def send_whatsapp(to, text):
 
 
 def send_buttons(to, body_text, buttons):
-    """
-    Maksimum 3 düymə göndər.
-    buttons = [{"id": "btn_1", "title": "Randevu al"}]
-    """
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
@@ -97,87 +82,64 @@ def send_buttons(to, body_text, buttons):
     requests.post(url, headers=headers, json=payload)
 
 
-# ──────────────────────────────────────────
-# YENİ MÜŞTƏRİYƏ 3 XOŞGƏLMƏ MESAJı
-# ──────────────────────────────────────────
 def send_welcome(phone):
-    import time
-
     send_whatsapp(phone,
         "Salam! 👋 *Glamour Studio*-ya xoş gəldiniz!\n"
         "Mən sizin 24/7 WhatsApp köməkçinizəm 💆‍♀️"
     )
     time.sleep(1)
-
     send_whatsapp(phone,
-        "✨ Bakının ən yaxşı gözəllik salonu kimi:\n"
+        "✨ Bakının ən yaxşı gözəllik salonu:\n"
         "• 6 fərqli xidmət\n"
         "• 3 peşəkar master\n"
-        "• Çox əlverişli qiymətlər"
+        "• Əlverişli qiymətlər"
     )
     time.sleep(1)
-
     send_buttons(phone,
         "Sizə necə kömək edə bilərəm? 👇",
         [
-            {"id": "btn_randevu",  "title": "📅 Randevu al"},
-            {"id": "btn_xidmet",   "title": "💅 Xidmətlər"},
-            {"id": "btn_unvan",    "title": "📍 Ünvan & Saat"},
+            {"id": "btn_randevu", "title": "📅 Randevu al"},
+            {"id": "btn_xidmet",  "title": "💅 Xidmətlər"},
+            {"id": "btn_unvan",   "title": "📍 Ünvan & Saat"},
         ]
     )
 
 
-# ──────────────────────────────────────────
-# AI İLƏ CAVAB AL
-# ──────────────────────────────────────────
 def get_ai_response(phone, user_message):
     if phone not in conversations:
         conversations[phone] = []
 
-    conversations[phone].append({
-        "role": "user",
-        "content": user_message
-    })
+    conversations[phone].append({"role": "user", "content": user_message})
 
-    # Son 20 mesajı saxla (yaddaş idarəsi)
     if len(conversations[phone]) > 20:
         conversations[phone] = conversations[phone][-20:]
 
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         max_tokens=500,
-        system=SALON_INFO,
-        messages=conversations[phone]
+        messages=[
+            {"role": "system", "content": SALON_INFO},
+            *conversations[phone]
+        ]
     )
 
-    ai_text = response.content[0].text
-
-    conversations[phone].append({
-        "role": "assistant",
-        "content": ai_text
-    })
-
+    ai_text = response.choices[0].message.content
+    conversations[phone].append({"role": "assistant", "content": ai_text})
     return ai_text
 
 
-# ──────────────────────────────────────────
-# RANDEVU TƏSDİQİ AŞKAR ET
-# ──────────────────────────────────────────
-def check_booking_confirmed(ai_text, phone):
+def notify_owner(ai_text, phone):
     if "RANDEVU_TƏSDİQ:" in ai_text:
-        # Sahibəyə bildiriş (öz nömrənə)
-        owner_phone = os.environ.get("OWNER_PHONE", "")
-        if owner_phone:
-            send_whatsapp(owner_phone,
+        owner = os.environ.get("OWNER_PHONE", "")
+        if owner:
+            details = ai_text.split("RANDEVU_TƏSDİQ:")[1].strip()
+            send_whatsapp(owner,
                 f"🔔 *YENİ RANDEVU*\n"
                 f"Müştəri: {phone}\n"
-                f"{ai_text.split('RANDEVU_TƏSDİQ:')[1].strip()}"
+                f"{details}"
             )
 
 
-# ──────────────────────────────────────────
-# WEBHOOK — META DOĞRULAMA
-# ──────────────────────────────────────────
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode      = request.args.get("hub.mode")
@@ -188,19 +150,11 @@ def verify():
     return "Forbidden", 403
 
 
-# ──────────────────────────────────────────
-# WEBHOOK — GƏLƏN MESAJLAR
-# ──────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-
     try:
-        entry    = data["entry"][0]
-        changes  = entry["changes"][0]
-        value    = changes["value"]
-        messages = value.get("messages", [])
-
+        messages = data["entry"][0]["changes"][0]["value"].get("messages", [])
         if not messages:
             return jsonify({"status": "ok"})
 
@@ -208,14 +162,10 @@ def webhook():
         phone = msg["from"]
         mtype = msg["type"]
 
-        # Mətn mesajı
         if mtype == "text":
             user_text = msg["text"]["body"]
-
-        # Düymə cavabı
         elif mtype == "interactive":
-            itype = msg["interactive"]["type"]
-            if itype == "button_reply":
+            if msg["interactive"]["type"] == "button_reply":
                 btn_id = msg["interactive"]["button_reply"]["id"]
                 btn_map = {
                     "btn_randevu": "Randevu almaq istəyirəm",
@@ -228,20 +178,13 @@ def webhook():
         else:
             return jsonify({"status": "ok"})
 
-        # İlk dəfə yazır → xoşgəlmə mesajları göndər
         if phone not in conversations:
             send_welcome(phone)
-            # Söhbəti başlat ki növbəti mesajda xoşgəlmə təkrarlanmasın
             conversations[phone] = []
             return jsonify({"status": "ok"})
 
-        # AI cavabı al
         ai_reply = get_ai_response(phone, user_text)
-
-        # Randevu təsdiqlənibsə sahibəyə xəbər ver
-        check_booking_confirmed(ai_reply, phone)
-
-        # Müştəriyə cavab göndər
+        notify_owner(ai_reply, phone)
         send_whatsapp(phone, ai_reply)
 
     except (KeyError, IndexError):
