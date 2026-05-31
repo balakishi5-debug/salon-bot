@@ -1,5 +1,4 @@
 import os
-import json
 import time
 import requests
 from flask import Flask, request, jsonify
@@ -12,34 +11,33 @@ WHATSAPP_TOKEN  = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 VERIFY_TOKEN    = os.environ.get("VERIFY_TOKEN", "salon123")
 
-SALON_INFO = """Sən Glamour Studio gözəllik salonunun WhatsApp köməkçisisən.
+SALON_INFO = """Sən Garant Consulting şirkətinin WhatsApp köməkçisisən.
 
-SALON MƏLUMATLARI:
-- Ünvan: Neftçilər pr. 45, Bakı
-- Tel: +994 50 123 45 67
-- İş saatları: 09:00–19:00 (B.E – Şənbə)
+ŞİRKƏT MƏLUMATLARI:
+- Ad: Garant Consulting
+- Təsisçilər: Balakişi Qurbanov və Ayşən Salamova
+- Rəhbər: Ayşən Salamova
+- İş saatları: Həftənin 5 günü (Bazar ertəsi – Cümə), saat 10:00 – 18:00
 
-XİDMƏTLƏR VƏ QİYMƏTLƏR:
-- 💇 Saç Kəsimi — 15₼
-- 💅 Manikür — 20₼
-- 🧖 Üz Baxımı — 35₼
-- 💄 Makiyaj — 40₼
-- 🎨 Saç Boyası — 50₼
-- 👁️ Qaş Dizaynı — 10₼
-
-MASTERLƏRIMIZ:
-- Aytən xanım (saç, boyama)
-- Günay xanım (manikür, qaş)
-- Leyla xanım (üz baxımı, makiyaj)
-
-RANDEVU SAATLARI: 09:00, 11:00, 13:00, 15:00, 17:00
+XİDMƏTLƏRİMİZ:
+1. 📊 Mühasibat uçotunun aparılması
+2. 📋 Vergi hesabatlarının hazırlanması
+3. 💼 Əmək haqqı hesablanması (Payroll)
+4. 🏢 Şirkət qeydiyyatı və ləğvi
+5. 📑 Mühasibat konsaltinqi
+6. 🔍 Maliyyə audit xidməti
+7. 💰 Vergi optimallaşdırması
+8. 📈 Maliyyə hesabatlarının hazırlanması
 
 DAVRANIŞIN:
-- Azərbaycan dilində mehriban danış
-- Qısa və aydın cavab ver
-- Randevu üçün: xidmət + master + saat lazımdır
-- Randevu tamamlandıqda mütləq bu formatda yaz:
-  ✅ RANDEVU_TƏSDİQ: [xidmət] | [master] | [saat]"""
+- Azərbaycan dilində mehriban və peşəkar danış
+- Müştərinin sualını diqqətlə dinlə
+- Xidmətlər haqqında ətraflı məlumat ver
+- Müştəri xidmət seçdikdə və ya əlaqə saxlamaq istədikdə onun adını və telefon nömrəsini öyrən
+- Məlumatlar tamamlandıqda mütləq bu formatda yaz:
+  ✅ QEYDİYYAT: [ad] | [telefon] | [xidmət]
+- Qeydiyyat tamamlandıqdan sonra müştəriyə bildiriş göndər ki, ən qısa zamanda əlaqə yaradılacaq
+- Saat xaricində yazılsa, sabah iş saatlarında cavab veriləcəyini bildir"""
 
 conversations = {}
 
@@ -84,23 +82,23 @@ def send_buttons(to, body_text, buttons):
 
 def send_welcome(phone):
     send_whatsapp(phone,
-        "Salam! 👋 *Glamour Studio*-ya xoş gəldiniz!\n"
-        "Mən sizin 24/7 WhatsApp köməkçinizəm 💆‍♀️"
+        "Salam! 👋 *Garant Consulting*-ə xoş gəldiniz!\n"
+        "Peşəkar mühasibat xidmətləri üçün doğru yerə müraciət etdiniz. 💼"
     )
     time.sleep(1)
     send_whatsapp(phone,
-        "✨ Bakının ən yaxşı gözəllik salonu:\n"
-        "• 6 fərqli xidmət\n"
-        "• 3 peşəkar master\n"
-        "• Əlverişli qiymətlər"
+        "🏢 *Garant Consulting* haqqında:\n"
+        "• Rəhbər: Ayşən Salamova\n"
+        "• İş saatları: B.E – Cümə, 10:00 – 18:00\n"
+        "• Peşəkar mühasibat & vergi xidmətləri"
     )
     time.sleep(1)
     send_buttons(phone,
-        "Sizə necə kömək edə bilərəm? 👇",
+        "Sizə necə kömək edə bilərik? 👇",
         [
-            {"id": "btn_randevu", "title": "📅 Randevu al"},
-            {"id": "btn_xidmet",  "title": "💅 Xidmətlər"},
-            {"id": "btn_unvan",   "title": "📍 Ünvan & Saat"},
+            {"id": "btn_xidmetler", "title": "📊 Xidmətlərimiz"},
+            {"id": "btn_qeydiyyat", "title": "📝 Müraciət et"},
+            {"id": "btn_elaqe",     "title": "📞 Əlaqə"},
         ]
     )
 
@@ -116,7 +114,7 @@ def get_ai_response(phone, user_message):
 
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        max_tokens=500,
+        max_tokens=600,
         messages=[
             {"role": "system", "content": SALON_INFO},
             *conversations[phone]
@@ -129,13 +127,13 @@ def get_ai_response(phone, user_message):
 
 
 def notify_owner(ai_text, phone):
-    if "RANDEVU_TƏSDİQ:" in ai_text:
+    if "QEYDİYYAT:" in ai_text:
         owner = os.environ.get("OWNER_PHONE", "")
         if owner:
-            details = ai_text.split("RANDEVU_TƏSDİQ:")[1].strip()
+            details = ai_text.split("QEYDİYYAT:")[1].strip()
             send_whatsapp(owner,
-                f"🔔 *YENİ RANDEVU*\n"
-                f"Müştəri: {phone}\n"
+                f"🔔 *YENİ MÜRACİƏT — Garant Consulting*\n"
+                f"Müştəri nömrəsi: {phone}\n"
                 f"{details}"
             )
 
@@ -168,9 +166,9 @@ def webhook():
             if msg["interactive"]["type"] == "button_reply":
                 btn_id = msg["interactive"]["button_reply"]["id"]
                 btn_map = {
-                    "btn_randevu": "Randevu almaq istəyirəm",
-                    "btn_xidmet":  "Xidmətlər və qiymətlər haqqında məlumat ver",
-                    "btn_unvan":   "Ünvan və iş saatları haqqında məlumat ver",
+                    "btn_xidmetler": "Xidmətləriniz haqqında ətraflı məlumat verin",
+                    "btn_qeydiyyat": "Müraciət etmək istəyirəm, qeydiyyatdan keçmək istəyirəm",
+                    "btn_elaqe":     "Əlaqə məlumatlarınızı verin",
                 }
                 user_text = btn_map.get(btn_id, btn_id)
             else:
@@ -195,7 +193,7 @@ def webhook():
 
 @app.route("/")
 def home():
-    return "Glamour Studio WhatsApp Bot işləyir! ✅"
+    return "Garant Consulting WhatsApp Bot işləyir! ✅"
 
 
 if __name__ == "__main__":
