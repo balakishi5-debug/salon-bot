@@ -23,6 +23,9 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 processed_messages = set()
 MAX_PROCESSED = 1000
 
+# ── Bu sessiyada xoş gəldin göndərilmiş nömrələr ───────────────
+welcomed_phones = set()
+
 # ── Tez-tez soruşulan sözlər — AI-sız ani cavab ────────────────
 FAST_REPLIES = {
     ("qiymət","qiymətlər","nəqədər","neçəyə","pul","məbləğ"): "prices",
@@ -469,17 +472,11 @@ def send_welcome(phone):
         cnt = customer.get("muraciet_sayi", 1)
 
         if segment == "vip":
-            intro = (f"{greeting}, əziz *{ad}*! 👑\n"
-                     f"Ən dəyərli müştərilərimizdənsiniz — {cnt}-ci müraciətiniz! "
-                     f"Sizi görmək həmişə xüsusi sevinc verir! 🌟")
+            intro = "{}, əziz *{}*! 👑\nƏn dəyərli müştərilərimizdənsiniz! Sizi görmək həmişə xüsusi sevinc verir! 🌟".format(greeting, ad)
         elif segment == "sadiq":
-            intro = (f"{greeting}, hörmətli *{ad}*! ⭐\n"
-                     f"Yenidən qapımızı döydünüz — {cnt}-ci dəfə! "
-                     f"Artıq ailəmizin bir parçasısınız! 🏠")
+            intro = "{}, hörmətli *{}*! ⭐\nYenidən qapımızı döydünüz! Artıq ailəmizin bir parçasısınız! 🏠".format(greeting, ad)
         else:
-            intro = (f"{greeting}, hörmətli *{ad}*! 👋\n"
-                     f"Sizi yenidən görməkdən çox məmnun olduq! "
-                     f"Bu sizin {cnt + 1}-ci müraciətinizdir. 🌟")
+            intro = "{}, hörmətli *{}*! 👋\nSizi yenidən görməkdən çox məmnun olduq! 🌟".format(greeting, ad)
 
         send_whatsapp(phone, intro)
         time.sleep(1)
@@ -590,14 +587,17 @@ def webhook():
         else:
             return jsonify({"status": "ok"})
 
-        # ── İlk dəfə yazır ──────────────────────────────────────
+        # ── İlk dəfə yazır (bu sessiyada) ──────────────────────
         if phone not in conversations:
-            send_welcome(phone)
             conversations[phone] = []
-            if user_text and user_text.startswith("/"):
-                time.sleep(0.5)
-                handle_slash_command(phone, user_text)
-            return jsonify({"status": "ok"})
+            # Yalnız bu sessiyada bir dəfə xoş gəldin göndər
+            if phone not in welcomed_phones:
+                welcomed_phones.add(phone)
+                send_welcome(phone)
+                if user_text and user_text.startswith("/"):
+                    time.sleep(0.5)
+                    handle_slash_command(phone, user_text)
+                return jsonify({"status": "ok"})
 
         # ── İş saatı xaricindədirsə ─────────────────────────────
         if not is_work_hours():
@@ -642,7 +642,7 @@ def webhook():
 # ADMIN PANEL
 # ════════════════════════════════════════════════════════════════
 
-ADMIN_HTML = """
+ADMIN_HTML = r"""
 <!DOCTYPE html>
 <html lang="az">
 <head>
@@ -672,7 +672,7 @@ tr:hover td { background: #f7fafc; }
 .badge.vip      { background:#fef3c7; color:#92400e; }
 .badge.sadiq    { background:#e0e7ff; color:#3730a3; }
 .stage-maraqlandı  { color: #718096; }
-.stage-sual\ verdi { color: #2b6cb0; }
+.stage-sual-verdi { color: #2b6cb0; }
 .stage-müraciət\ etdi { color: #276749; font-weight:600; }
 .refresh { background:#2b6cb0; color:white; border:none; padding:8px 18px; border-radius:8px; cursor:pointer; font-size:13px; }
 </style>
